@@ -20,16 +20,17 @@ $ sudo systemctl enable jenkins       //Enable the Jenkins service to start at b
 $ sudo systemctl start jenkins        //Start Jenkins as a service
 $ systemctl status jenkins
 ################################################################### Ansible Installation on Ubuntu #########################################################################
-Refer--https://phoenixnap.com/kb/install-ansible-ubuntu-20-04
 $ sudo adduser ansibleadmin
 $ sudo usermod -aG sudo ansibleadmin
 $ sudo init 6
-$ sudo su ansibleadmin
+$ sudo su ansibleadmin (Login as a ansibleadmin User in the Mobaxterm)
 $ ssh-keygen       //public key is at /home/ansibleadmin/.ssh/id_rsa.pub
 $ sudo apt-add-repository ppa:ansible/ansible
 $ sudo apt update
 $ sudo apt install ansible-core
 $ ansible --version
+Go to Jenkins and install plugins (Publish over ssh)
+Under the Publish over ssh (Add Ansible and Password Auth and test)
 $ cd /opt
 $ sudo mkdir docker
 $ sudo chown ansibleadmin:ansibleadmin docker
@@ -37,11 +38,15 @@ $ sudo apt install docker.io
 $ systemctl status docker
 $ sudo usermod -aG docker ansibleadmin
 $ id ansibleadmin
+init 6
 ################################################### Create Ansible Playbook to Create Docker Image and Copy Image to DockerHub ###################################################
 $ sudo apt install net-tools
 $ifconfig
 $ sudo nano /etc/ansible/host
-$ ssh-copy-id localhost    //adding self ssh key
+  Check the Private ip of the AnsibleServer 
+  sudo vi hosts (add the [ansible 10.0.0.4] :wq
+$ ssh-copy-id 10.0.0.4    //adding self ssh key
+cd /opt/docker
 $ nano cafe-app.yml
 ---
 - hosts: ansible
@@ -53,6 +58,18 @@ $ nano cafe-app.yml
       dest: /opt/docker/cafe-app
       clone: yes
       update: yes
+====================================================== (Add the Above First and run)
+                                                        ansible-playbook cafe-app.yml --check
+                                                        ansible-playbook cafe-app.yml)
+                                                        Docker images
+                                                        Docker login (username/password)
+=========================================================
+
+open the vi cafe-app-yml (Add the Below Line and Run)
+ansible-playbook cafe-app.yml --check
+ansible-playbook cafe-app.yml 
+(Check the ansible push to docker hub)
+                                                         
 
   - name: create docker image
     command: docker build -t cafe-app:latest /opt/docker/cafe-app
@@ -65,20 +82,23 @@ $ nano cafe-app.yml
   - name: push docker image
     command: docker push awscloudvendor/cafe-app:latest
 
-$ ansible-playbook cafe-app.yml --check
-$ ansible-playbook cafe-app.yml
-$ docker images
-$ docker login
+After this Go to Jenkins 
+create a Project --> add the Git Project repo ---> Branch ---> Add post-build action ---> send build artifacts over ssh
+----> ansible-playbook /opt/docker/cafe-app.yml --> apply and save ---> Build Now
+Go to Ansible server check (docker images)
+check the docker hub and refresh and check the its updated
+
 ################################################### Install Azure CLI and Connect to Kubernetes from Azure CLI #######################################
-Refer--https://learn.microsoft.com/en-us/cli/azure/install-azure-cli-linux?pivots=apt
+Create a VM for the Kubernetes Server
+sudo su 
 $ curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
 $ az --version
+ Create a Kubernets Cluster and select node 2 and network configuration select (kubelet)
 $ az login
 $ az aks install-cli
 $ az aks get-credentials --resource-group MyLab-RG --name mylab-cluster
 $ kubectl get nodes
 ################################################### Create Deployment and Service Manisfest Files ###################################################
-Refer--https://kubernetes.io/docs/concepts/workloads/controllers/deployment/
 $ nano cafe-app-deployment.yml
 apiVersion: apps/v1
 kind: Deployment
@@ -110,7 +130,6 @@ spec:
       maxSurge: 1
       maxUnavailable: 1
 
-Refer---https://kubernetes.io/docs/tutorials/services/connect-applications-service/
 $ nano cafe-app-service.yml
 apiVersion: v1
 kind: Service
@@ -128,14 +147,21 @@ spec:
 
   type: LoadBalancer
 
+Check the Private ip of the Kubernetes Server and Go to ansible server (/etc/ansible)
+open the hosts file vi hosts ---> and add [Kubernetes 10.0.0.6] ---> :wq
+Go to the Kubenetes server and access the /etc/ssh/sshd_config ---> PasswordAuthentication Yes 
+                                                                    PermitRootLogin yes 
+passwd root
+123
+123
+service sshd restart
+
+Go to the Ansible Server --> ssh-copy-id root@10.0.0.6 ---> Private ip of the Kubernetes Server
+
+
 ############################### Integrate Kube-Server with Ansible and Create Ansible Playbook for Deployment & Service Manifest files ###############################
-$ nano /etc/ssh/sshd_config
-PasswordAuthentication yes
-PermitRootLogin yes
-systemctl restart sshd
-$ passwd root
-$ ssh-copy-id root@10.0.0.6
-$ ssh 'root@10.0.0.6'
+Go to Ansible Server
+cd /opt/docker
 $  mv cafe-app.yml create-image-cafe-app.yml 
 $ nano kubernetes-deploy.yml
 ---
@@ -152,9 +178,26 @@ $ nano kubernetes-deploy.yml
     - name: update deployment with new pods if image updated in docker hub
       command: kubectl rollout restart deployment.apps/mylab-cafe-app
 
+Go to Kube Server ---> kubectl get all
 
-$ ansible-playbook kubernetes-deploy.yml
+
+$ ansible-playbook kubernetes-deploy.yml ---> Run in the ansible Server
+
+Go to the Kubenernets Server ---> kubectl get all ----> we can see all pods running with the LoadBalancer
+
+Go to the Jenkins Server
+Create a new project ----> CD Job
+Postbuildactions ---------> send build artifacts over ssh
 Exec command:ansible-playbook /opt/docker/kubernetes-deploy.yml
+
+Go to jenkind CI-Job Project
+change Exec command:ansible-playbook /opt/docker/create-image-cafe-app.yml ---> Replace the Name
+
+Select the Postbuildactions --------> Build other Projects ---> select the CD Job ---> pollSCM (* * * * *) --> apply save
+
+Check the Pipeline
+
+
 ############################################################## Cleanup ##############################################################
 $ kubectl delete deployment.apps/mylab-cafe-app
 $ kubectl delete service/mylab-service
